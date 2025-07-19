@@ -1,69 +1,77 @@
-const express = require("express");
-const cors = require("cors");
-const fetch = require("node-fetch");
-const path = require("path");
-const fs = require("fs");
+const express = require('express');
+const fs = require('fs');
+const cors = require('cors');
+const session = require('express-session');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CLIENT_ID = "YOUR_INSTAGRAM_CLIENT_ID";
-const CLIENT_SECRET = "YOUR_INSTAGRAM_CLIENT_SECRET";
-const REDIRECT_URI = "http://localhost:3000/auth/instagram/callback";
-
-let users = {};
-let data = require("./data.json");
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.static('public'));
+app.use(session({
+  secret: 'your_secret',
+  resave: false,
+  saveUninitialized: true
+}));
 
-app.get("/login", (req, res) => {
-  const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=user_profile&response_type=code`;
-  res.redirect(authUrl);
+const ADMIN_USER = { username: 'theomwoyo', password: 'idahadah.18' };
+
+// Load data
+let data = JSON.parse(fs.readFileSync('data.json'));
+
+// Admin login
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USER.username && password === ADMIN_USER.password) {
+    req.session.user = 'admin';
+    return res.json({ success: true });
+  }
+  res.status(401).json({ error: 'Unauthorized' });
 });
 
-app.get("/auth/instagram/callback", async (req, res) => {
-  const code = req.query.code;
-  const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      grant_type: "authorization_code",
-      redirect_uri: REDIRECT_URI,
-      code
-    })
-  });
-
-  const tokenData = await tokenRes.json();
-  const accessToken = tokenData.access_token;
-  const profileRes = await fetch(`https://graph.instagram.com/me?fields=id,username&access_token=${accessToken}`);
-  const profile = await profileRes.json();
-
-  users[profile.id] = profile;
-  res.redirect(`/index.html`);
+// Upload new celebrity (admin only)
+app.post('/upload', (req, res) => {
+  if (req.session.user !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { name, image, instagram } = req.body;
+  data.celebrities.push({ name, image, instagram, votes: 0 });
+  fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
+  res.json({ success: true });
 });
 
-app.get("/api/celebrities", (req, res) => {
-  res.json(data);
-});
+// Vote once per IP per day
+const ipVotes = {};
 
-app.post("/api/vote", (req, res) => {
+app.post('/vote', (req, res) => {
+  const ip = req.ip;
+  const today = new Date().toISOString().split('T')[0];
+  if (ipVotes[ip] === today) {
+    return res.status(403).json({ error: 'Already voted today' });
+  }
+
   const { name } = req.body;
-  const celeb = data.find(c => c.name === name);
-  if (celeb) celeb.votes += 1;
-  fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
+  const celeb = data.celebrities.find(c => c.name === name);
+  if (!celeb) return res.status(404).json({ error: 'Celebrity not found' });
+
+  celeb.votes += 1;
+  ipVotes[ip] = today;
+  fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
   res.json({ success: true });
 });
 
-app.post("/api/upload", (req, res) => {
-  const { name, img, insta, secret } = req.body;
-  if (secret !== "admin123") return res.status(403).send("Unauthorized");
-
-  data.push({ name, img, insta, votes: 0 });
-  fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
-  res.json({ success: true });
+// Get current voting data
+app.get('/celebrities', (req, res) => {
+  res.json(data.celebrities);
 });
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// Fallback for index.html on root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
