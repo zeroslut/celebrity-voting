@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Celebrity Voting</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fafafa;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    .login-screen {
+      margin-top: 100px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #3897f0;
+      border: none;
+      color: white;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    header {
+      background: white;
+      padding: 10px;
+      border-bottom: 1px solid #ccc;
+    }
+    .card-list {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      width: 250px;
+      margin: 15px;
+      padding: 15px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .card img {
+      width: 100%;
+      border-radius: 10px;
+    }
+    .vote-btn {
+      margin-top: 10px;
+      background-color: #e1306c;
+      width: 100%;
+    }
+    .card a {
+      text-decoration: none;
+      color: #00376b;
+      display: block;
+      margin-top: 10px;
+    }
+    #adminPanel {
+      margin: 20px;
+    }
+    #adminPanel input {
+      margin: 5px;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-screen" id="loginScreen">
+    <h2>Login with Instagram</h2>
+    <button onclick="window.location.href='/login'">Login with Instagram</button>
+  </div>
+
+  <div class="main-content" id="mainContent" style="display:none;">
+    <header>
+      <h1>Vote for the Hottest Celebrity</h1>
+    </header>
+
+    <div id="adminPanel" style="display:none;">
+      <h3>Upload New Celebrity</h3>
+      <form id="uploadForm">
+        <input type="text" id="name" placeholder="Name" required />
+        <input type="url" id="image" placeholder="Image URL" required />
+        <input type="url" id="insta" placeholder="Instagram Profile URL" required />
+        <button type="submit">Upload</button>
+      </form>
+    </div>
+
+    <div class="card-list" id="cardList"></div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchCelebs();
+
+      document.getElementById("uploadForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = document.getElementById("name").value;
+        const img = document.getElementById("image").value;
+        const insta = document.getElementById("insta").value;
+        await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, img, insta, secret: "admin123" })
+        });
+        fetchCelebs();
+      });
+    });
+
+    let hasVoted = false;
+
+    function loginUser() {
+      document.getElementById("loginScreen").style.display = "none";
+      document.getElementById("mainContent").style.display = "block";
+      fetchCelebs();
+    }
+
+    function loginAdmin() {
+      loginUser();
+      document.getElementById("adminPanel").style.display = "block";
+    }
+
+    async function fetchCelebs() {
+      const res = await fetch("/api/celebrities");
+      const celebs = await res.json();
+      const container = document.getElementById("cardList");
+      container.innerHTML = "";
+
+      celebs.forEach((celeb) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <img src="${celeb.img}" alt="${celeb.name}" />
+          <h3>${celeb.name}</h3>
+          <p>${celeb.votes} votes</p>
+          <button class="vote-btn" onclick="vote('${celeb.name}')">Vote</button>
+          <a href="${celeb.insta}" target="_blank">View on Instagram</a>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function vote(name) {
+      if (hasVoted) return alert("You can only vote once per day.");
+      await fetch("/api/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      hasVoted = true;
+      fetchCelebs();
+    }
+  </script>
+</body>
+</html>
